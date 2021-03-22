@@ -125,27 +125,67 @@
     else if (components >= 3) {
         address = _host;
     }
-
-    CFHostRef host = CFHostCreateWithName(kCFAllocatorDefault, (__bridge CFStringRef)address);
+    
     CFStreamError error;
     NSArray *addresses = nil;
-
-    if (host) {
-        NMSSHLogVerbose(@"Start %@ resolution", address);
-
-        if (CFHostStartInfoResolution(host, kCFHostAddresses, &error)) {
-            addresses = (__bridge NSArray *)(CFHostGetAddressing(host, NULL));
+    CFHostRef host = nil;
+    CFDataRef data = nil;
+    struct sockaddr_in s;
+    
+    NMSSHLogVerbose(@"Begin %@ resolution", address);
+    
+    s.sin_family = AF_INET;
+    s.sin_port = htons([self.port intValue]);
+    
+    int success = inet_pton(AF_INET, [address UTF8String], &s.sin_addr);
+    
+    if (success == 1) {
+        data = CFDataCreate(NULL, (UInt8 *)&s, sizeof(s));
+        
+        if (data) {
+            host = CFHostCreateWithAddress(NULL, data);
+            
+            if (host) {
+                addresses = (__bridge NSArray *)(CFHostGetAddressing(host, NULL));
+            }
+            else {
+                NMSSHLogError(@"Error allocating CFHostCreateWithAddress for %@", address);
+            }
         }
         else {
-            NMSSHLogError(@"Unable to resolve host %@", address);
+            NMSSHLogError(@"Error allocating CFData for %@", address);
         }
-
-        CFRelease(host);
     }
     else {
-        NMSSHLogError(@"Error allocating CFHost for %@", address);
+        host = CFHostCreateWithName(kCFAllocatorDefault, (__bridge CFStringRef)address);
+        
+        if (host) {
+            NMSSHLogVerbose(@"Start DNS %@ resolution", address);
+            
+            if (CFHostStartInfoResolution(host, kCFHostAddresses, &error)) {
+               addresses = (__bridge NSArray *)(CFHostGetAddressing(host, NULL));
+            }
+            else {
+               NMSSHLogError(@"Unable to resolve host %@", address);
+            }
+            
+            NMSSHLogVerbose(@"End DNS %@ resolution", address);
+        }
+        else {
+            NMSSHLogError(@"Error allocating CFHostCreateWithName for %@", address);
+        }
     }
-
+    
+    NMSSHLogVerbose(@"End %@ resolution", address);
+    
+    if (data) {
+        CFRelease(data);
+    }
+    
+    if (host) {
+        CFRelease(host);
+    }
+    
     return addresses;
 }
 
